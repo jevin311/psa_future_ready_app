@@ -25,6 +25,7 @@ st.set_page_config(layout="wide", page_title="PSA Future-Ready Workforce — ML 
 # -------------------------
 # Robust file loaders
 # -------------------------
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 EMPLOYEE_FILE = os.path.join(BASE_DIR, "Employee_Profiles.json")
 FUNCTIONS_FILE = os.path.join(BASE_DIR, "Functions & Skills.xlsx")
 
