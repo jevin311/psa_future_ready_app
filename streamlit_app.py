@@ -25,24 +25,27 @@ st.set_page_config(layout="wide", page_title="PSA Future-Ready Workforce — ML 
 # -------------------------
 # Robust file loaders
 # -------------------------
-# Base directory fallback
-BASE_DIR = os.getcwd()
+EMPLOYEE_FILE = "Employee_Profiles.json"
+FUNCTIONS_FILE = "Functions & Skills.xlsx"
 
-# Default file paths
-EMPLOYEE_FILE = os.path.join(BASE_DIR, "Employee_Profiles.json")
-FUNCTIONS_FILE = os.path.join(BASE_DIR, "Functions & Skills.xlsx")
+# Fallback to /mnt/data if local file missing
+if not os.path.exists(EMPLOYEE_FILE):
+    if os.path.exists("/mnt/data/Employee_Profiles.json"):
+        EMPLOYEE_FILE = "/mnt/data/Employee_Profiles.json"
+        st.info("Using Employee_Profiles.json from /mnt/data")
+    else:
+        st.warning("Employee_Profiles.json not found locally or in /mnt/data. Please upload.")
 
-# fallback to /mnt/data if files not found
-if not os.path.isfile(EMPLOYEE_FILE):
-    EMPLOYEE_FILE = "/mnt/data/Employee_Profiles.json"
+if not os.path.exists(FUNCTIONS_FILE):
+    if os.path.exists("/mnt/data/Functions & Skills.xlsx"):
+        FUNCTIONS_FILE = "/mnt/data/Functions & Skills.xlsx"
+        st.info("Using Functions & Skills.xlsx from /mnt/data")
+    else:
+        st.warning("Functions & Skills.xlsx not found locally or in /mnt/data. Please upload.")
 
-if not os.path.isfile(FUNCTIONS_FILE):
-    FUNCTIONS_FILE = "/mnt/data/Functions & Skills.xlsx"
-
-# Optional debug info
-st.write("BASE_DIR:", BASE_DIR)
-st.write("EMPLOYEE_FILE exists:", os.path.isfile(EMPLOYEE_FILE))
-st.write("FUNCTIONS_FILE exists:", os.path.isfile(FUNCTIONS_FILE))
+# Debug info
+st.write("EMPLOYEE_FILE:", EMPLOYEE_FILE, "| exists:", os.path.exists(EMPLOYEE_FILE))
+st.write("FUNCTIONS_FILE:", FUNCTIONS_FILE, "| exists:", os.path.exists(FUNCTIONS_FILE))
 @st.cache_data
 def load_employee_json():
     if os.path.isfile(EMPLOYEE_FILE):
