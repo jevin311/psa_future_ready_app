@@ -50,12 +50,14 @@ st.write("FUNCTIONS_FILE:", FUNCTIONS_FILE, "| exists:", os.path.exists(FUNCTION
 st.write("EMPLOYEE_FILE:", EMPLOYEE_FILE, "| exists:", os.path.exists(EMPLOYEE_FILE))
 st.write("FUNCTIONS_FILE:", FUNCTIONS_FILE, "| exists:", os.path.exists(FUNCTIONS_FILE))
 @st.cache_data
-def load_employee_json():
-    if os.path.isfile(EMPLOYEE_FILE):
-        with open(EMPLOYEE_FILE, "r", encoding="utf-8") as f:
+def load_employee_json(path=None):
+    file_to_load = path or EMPLOYEE_FILE
+    if os.path.isfile(file_to_load):
+        with open(file_to_load, "r", encoding="utf-8") as f:
             return json.load(f)
-    st.error(f"Cannot find Employee_Profiles.json at {EMPLOYEE_FILE}")
+    st.error(f"Cannot find Employee_Profiles.json at {file_to_load}")
     return []
+
 
 @st.cache_data
 def load_functions_skills():
