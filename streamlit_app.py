@@ -287,7 +287,7 @@ def recommend_trainings_from_skills(profile: dict, functions_df: pd.DataFrame) -
 def handle_conversation(profile: dict, message: str) -> Dict:
     m = (message or "").lower()
     if any(w in m for w in ["stress","stressed","anxious","anxiety","burnout"]):
-        return {"reply": "I'm sorry you're feeling this way. Consider reaching out to your manager or EAP. Short breathing breaks (5-min) and stepping away help. Would you like resources on EAP or a manager check-in template?"}
+        return {"reply": "I'm sorry you're-feeling this way. Consider reaching out to your manager or EAP. Short breathing breaks (5-min) and stepping away help. Would you like resources on EAP or a manager check-in template?"}
     if any(w in m for w in ["career","promotion","role","change","move"]):
         return {"reply": "I can generate a personalised career pathway for you. Click 'Recommend Trainings' for suggested upskilling and internal mobility options."}
     if any(w in m for w in ["training","learn","skill"]):
