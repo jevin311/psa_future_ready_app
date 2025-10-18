@@ -25,59 +25,29 @@ st.set_page_config(layout="wide", page_title="PSA Future-Ready Workforce — ML 
 # -------------------------
 # Robust file loaders
 # -------------------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+EMPLOYEE_FILE = os.path.join(BASE_DIR, "Employee_Profiles.json")
+FUNCTIONS_FILE = os.path.join(BASE_DIR, "Functions & Skills.xlsx")
 
 @st.cache_data
-def load_employee_json(paths=None):
-    """
-    Tries multiple paths to load Employee_Profiles.json
-    Returns: list of employee profiles
-    """
-    if paths is None:
-        paths = [
-            os.path.join(BASE_DIR, "Employee_Profiles.json"),
-            os.path.join(BASE_DIR, "./Employee_Profiles.json"),
-            "/mnt/data/Employee_Profiles.json"
-        ]
-    for p in paths:
-        if os.path.isfile(p):
-            try:
-                with open(p, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                st.success(f"Loaded employee profiles from {p}")
-                return data
-            except Exception as e:
-                st.warning(f"Found {p} but could not load JSON: {e}")
-    st.error(f"Could not find Employee_Profiles.json in paths: {paths}")
+def load_employee_json():
+    if os.path.isfile(EMPLOYEE_FILE):
+        with open(EMPLOYEE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    st.error(f"Cannot find Employee_Profiles.json at {EMPLOYEE_FILE}")
     return []
 
 @st.cache_data
-def load_functions_skills(paths=None):
-    """
-    Tries multiple paths to load Functions & Skills.xlsx
-    Returns: concatenated DataFrame from all sheets
-    """
-    if paths is None:
-        paths = [
-            os.path.join(BASE_DIR, "Functions & Skills.xlsx"),
-            os.path.join(BASE_DIR, "./Functions & Skills.xlsx"),
-            "/mnt/data/Functions & Skills.xlsx"
-        ]
-    for p in paths:
-        if os.path.isfile(p):
-            try:
-                xl = pd.read_excel(p, sheet_name=None, engine="openpyxl")
-                dfs = []
-                for name, df in xl.items():
-                    df["__sheet__"] = name
-                    dfs.append(df)
-                df_all = pd.concat(dfs, ignore_index=True)
-                st.success(f"Loaded Functions & Skills taxonomy from {p}")
-                return df_all
-            except Exception as e:
-                st.warning(f"Found {p} but could not read Excel: {e}")
-    st.warning(f"Could not find Functions & Skills.xlsx in paths: {paths}. Continuing without it.")
+def load_functions_skills():
+    if os.path.isfile(FUNCTIONS_FILE):
+        xl = pd.read_excel(FUNCTIONS_FILE, sheet_name=None, engine="openpyxl")
+        dfs = []
+        for name, df in xl.items():
+            df["__sheet__"] = name
+            dfs.append(df)
+        return pd.concat(dfs, ignore_index=True)
+    st.warning(f"Cannot find Functions & Skills.xlsx at {FUNCTIONS_FILE}")
     return pd.DataFrame()
+
 
 # -------------------------
 # Heuristic label creation
