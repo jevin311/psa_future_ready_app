@@ -30,8 +30,17 @@ try:
 except NameError:
     # fallback when __file__ is undefined (Streamlit Cloud, notebook, etc.)
     BASE_DIR = os.getcwd()
-EMPLOYEE_FILE = os.path.join(BASE_DIR, "Employee_Profiles.json")
-FUNCTIONS_FILE = os.path.join(BASE_DIR, "Functions & Skills.xlsx")
+
+
+if os.path.isfile(os.path.join(BASE_DIR, "Employee_Profiles.json")):
+    EMPLOYEE_FILE = os.path.join(BASE_DIR, "Employee_Profiles.json")
+else:
+    EMPLOYEE_FILE = "/mnt/data/Employee_Profiles.json"
+
+if os.path.isfile(os.path.join(BASE_DIR, "Functions & Skills.xlsx")):
+    FUNCTIONS_FILE = os.path.join(BASE_DIR, "Functions & Skills.xlsx")
+else:
+    FUNCTIONS_FILE = "/mnt/data/Functions & Skills.xlsx"
 
 @st.cache_data
 def load_employee_json():
