@@ -28,7 +28,7 @@ st.set_page_config(layout="wide", page_title="PSA Future-Ready Workforce — ML 
 EMPLOYEE_FILE = "Employee_Profiles.json"
 FUNCTIONS_FILE = "Functions & Skills.xlsx"
 
-# Fallback to /mnt/data if local file missing
+# If local file missing, check /mnt/data
 if not os.path.exists(EMPLOYEE_FILE):
     if os.path.exists("/mnt/data/Employee_Profiles.json"):
         EMPLOYEE_FILE = "/mnt/data/Employee_Profiles.json"
@@ -43,6 +43,9 @@ if not os.path.exists(FUNCTIONS_FILE):
     else:
         st.warning("Functions & Skills.xlsx not found locally or in /mnt/data. Please upload.")
 
+# Debug display
+st.write("EMPLOYEE_FILE:", EMPLOYEE_FILE, "| exists:", os.path.exists(EMPLOYEE_FILE))
+st.write("FUNCTIONS_FILE:", FUNCTIONS_FILE, "| exists:", os.path.exists(FUNCTIONS_FILE))
 # Debug info
 st.write("EMPLOYEE_FILE:", EMPLOYEE_FILE, "| exists:", os.path.exists(EMPLOYEE_FILE))
 st.write("FUNCTIONS_FILE:", FUNCTIONS_FILE, "| exists:", os.path.exists(FUNCTIONS_FILE))
