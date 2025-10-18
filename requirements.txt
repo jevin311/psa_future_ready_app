@@ -3,10 +3,6 @@ pandas
 numpy
 json
 datetime 
-sklearn.linear_model
-sklearn.model_selection
-sklearn.preprocessing
-sklearn.metrics
 sklearn
 joblib
 os
