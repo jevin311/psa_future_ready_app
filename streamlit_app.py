@@ -25,6 +25,8 @@ st.set_page_config(layout="wide", page_title="PSA Future-Ready Workforce — ML 
 # -------------------------
 # Robust file loaders
 # -------------------------
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 @st.cache_data
 def load_employee_json(paths=None):
     """
@@ -33,12 +35,12 @@ def load_employee_json(paths=None):
     """
     if paths is None:
         paths = [
-            "Employee_Profiles.json",
-            "./Employee_Profiles.json",
+            os.path.join(BASE_DIR, "Employee_Profiles.json"),
+            os.path.join(BASE_DIR, "./Employee_Profiles.json"),
             "/mnt/data/Employee_Profiles.json"
         ]
     for p in paths:
-        if os.path.exists(p):
+        if os.path.isfile(p):
             try:
                 with open(p, "r", encoding="utf-8") as f:
                     data = json.load(f)
@@ -57,12 +59,12 @@ def load_functions_skills(paths=None):
     """
     if paths is None:
         paths = [
-            "Functions & Skills.xlsx",
-            "./Functions & Skills.xlsx",
+            os.path.join(BASE_DIR, "Functions & Skills.xlsx"),
+            os.path.join(BASE_DIR, "./Functions & Skills.xlsx"),
             "/mnt/data/Functions & Skills.xlsx"
         ]
     for p in paths:
-        if os.path.exists(p):
+        if os.path.isfile(p):
             try:
                 xl = pd.read_excel(p, sheet_name=None, engine="openpyxl")
                 dfs = []
