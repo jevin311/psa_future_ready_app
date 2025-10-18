@@ -25,22 +25,24 @@ st.set_page_config(layout="wide", page_title="PSA Future-Ready Workforce — ML 
 # -------------------------
 # Robust file loaders
 # -------------------------
-try:
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-except NameError:
-    # fallback when __file__ is undefined (Streamlit Cloud, notebook, etc.)
-    BASE_DIR = os.getcwd()
+# Base directory fallback
+BASE_DIR = os.getcwd()  # current working directory
 
+# Default file paths
+EMPLOYEE_FILE = os.path.join(BASE_DIR, "Employee_Profiles.json")
+FUNCTIONS_FILE = os.path.join(BASE_DIR, "Functions & Skills.xlsx")
 
-if os.path.isfile(os.path.join(BASE_DIR, "Employee_Profiles.json")):
-    EMPLOYEE_FILE = os.path.join(BASE_DIR, "Employee_Profiles.json")
-else:
+# fallback to /mnt/data if files not found
+if not os.path.isfile(EMPLOYEE_FILE):
     EMPLOYEE_FILE = "/mnt/data/Employee_Profiles.json"
 
-if os.path.isfile(os.path.join(BASE_DIR, "Functions & Skills.xlsx")):
-    FUNCTIONS_FILE = os.path.join(BASE_DIR, "Functions & Skills.xlsx")
-else:
+if not os.path.isfile(FUNCTIONS_FILE):
     FUNCTIONS_FILE = "/mnt/data/Functions & Skills.xlsx"
+
+# Debug info
+st.write("BASE_DIR:", BASE_DIR)
+st.write("EMPLOYEE_FILE exists:", os.path.isfile(EMPLOYEE_FILE))
+st.write("FUNCTIONS_FILE exists:", os.path.isfile(FUNCTIONS_FILE))
 
 @st.cache_data
 def load_employee_json():
