@@ -26,7 +26,7 @@ st.set_page_config(layout="wide", page_title="PSA Future-Ready Workforce — ML 
 # Robust file loaders
 # -------------------------
 # Base directory fallback
-BASE_DIR = os.getcwd()  # current working directory
+BASE_DIR = os.getcwd()
 
 # Default file paths
 EMPLOYEE_FILE = os.path.join(BASE_DIR, "Employee_Profiles.json")
@@ -39,11 +39,10 @@ if not os.path.isfile(EMPLOYEE_FILE):
 if not os.path.isfile(FUNCTIONS_FILE):
     FUNCTIONS_FILE = "/mnt/data/Functions & Skills.xlsx"
 
-# Debug info
+# Optional debug info
 st.write("BASE_DIR:", BASE_DIR)
 st.write("EMPLOYEE_FILE exists:", os.path.isfile(EMPLOYEE_FILE))
 st.write("FUNCTIONS_FILE exists:", os.path.isfile(FUNCTIONS_FILE))
-
 @st.cache_data
 def load_employee_json():
     if os.path.isfile(EMPLOYEE_FILE):
