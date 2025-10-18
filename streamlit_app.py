@@ -25,52 +25,57 @@ st.set_page_config(layout="wide", page_title="PSA Future-Ready Workforce — ML 
 # -------------------------
 # Robust file loaders
 # -------------------------
-EMPLOYEE_FILE = "Employee_Profiles.json"
-FUNCTIONS_FILE = "Functions & Skills.xlsx"
-
-# If local file missing, check /mnt/data
-if not os.path.exists(EMPLOYEE_FILE):
-    if os.path.exists("/mnt/data/Employee_Profiles.json"):
-        EMPLOYEE_FILE = "/mnt/data/Employee_Profiles.json"
-        st.info("Using Employee_Profiles.json from /mnt/data")
-    else:
-        st.warning("Employee_Profiles.json not found locally or in /mnt/data. Please upload.")
-
-if not os.path.exists(FUNCTIONS_FILE):
-    if os.path.exists("/mnt/data/Functions & Skills.xlsx"):
-        FUNCTIONS_FILE = "/mnt/data/Functions & Skills.xlsx"
-        st.info("Using Functions & Skills.xlsx from /mnt/data")
-    else:
-        st.warning("Functions & Skills.xlsx not found locally or in /mnt/data. Please upload.")
-
-# Debug display
-st.write("EMPLOYEE_FILE:", EMPLOYEE_FILE, "| exists:", os.path.exists(EMPLOYEE_FILE))
-st.write("FUNCTIONS_FILE:", FUNCTIONS_FILE, "| exists:", os.path.exists(FUNCTIONS_FILE))
-# Debug info
-st.write("EMPLOYEE_FILE:", EMPLOYEE_FILE, "| exists:", os.path.exists(EMPLOYEE_FILE))
-st.write("FUNCTIONS_FILE:", FUNCTIONS_FILE, "| exists:", os.path.exists(FUNCTIONS_FILE))
 @st.cache_data
-def load_employee_json(path=None):
-    file_to_load = path or EMPLOYEE_FILE
-    if os.path.isfile(file_to_load):
-        with open(file_to_load, "r", encoding="utf-8") as f:
-            return json.load(f)
-    st.error(f"Cannot find Employee_Profiles.json at {file_to_load}")
+def load_employee_json(paths=None):
+    """
+    Tries multiple paths to load Employee_Profiles.json
+    Returns: list of employee profiles
+    """
+    if paths is None:
+        paths = [
+            "Employee_Profiles.json",
+            "./Employee_Profiles.json",
+            "/mnt/data/Employee_Profiles.json"
+        ]
+    for p in paths:
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                st.success(f"Loaded employee profiles from {p}")
+                return data
+            except Exception as e:
+                st.warning(f"Found {p} but could not load JSON: {e}")
+    st.error(f"Could not find Employee_Profiles.json in paths: {paths}")
     return []
 
-
 @st.cache_data
-def load_functions_skills():
-    if os.path.isfile(FUNCTIONS_FILE):
-        xl = pd.read_excel(FUNCTIONS_FILE, sheet_name=None, engine="openpyxl")
-        dfs = []
-        for name, df in xl.items():
-            df["__sheet__"] = name
-            dfs.append(df)
-        return pd.concat(dfs, ignore_index=True)
-    st.warning(f"Cannot find Functions & Skills.xlsx at {FUNCTIONS_FILE}")
+def load_functions_skills(paths=None):
+    """
+    Tries multiple paths to load Functions & Skills.xlsx
+    Returns: concatenated DataFrame from all sheets
+    """
+    if paths is None:
+        paths = [
+            "Functions & Skills.xlsx",
+            "./Functions & Skills.xlsx",
+            "/mnt/data/Functions & Skills.xlsx"
+        ]
+    for p in paths:
+        if os.path.exists(p):
+            try:
+                xl = pd.read_excel(p, sheet_name=None, engine="openpyxl")
+                dfs = []
+                for name, df in xl.items():
+                    df["__sheet__"] = name
+                    dfs.append(df)
+                df_all = pd.concat(dfs, ignore_index=True)
+                st.success(f"Loaded Functions & Skills taxonomy from {p}")
+                return df_all
+            except Exception as e:
+                st.warning(f"Found {p} but could not read Excel: {e}")
+    st.warning(f"Could not find Functions & Skills.xlsx in paths: {paths}. Continuing without it.")
     return pd.DataFrame()
-
 
 # -------------------------
 # Heuristic label creation
@@ -493,4 +498,3 @@ st.markdown(
 - Consider richer features (360 feedback, engagement surveys, assessment scores) and explainability (SHAP) for production.
 """
 )
-
