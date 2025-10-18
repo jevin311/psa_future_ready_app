@@ -1,9 +1,8 @@
-
 # psa_future_ready_app.py
 # Streamlit app: PSA Future-Ready Workforce (ML leadership predictor + recommender)
-# Place this file in the same environment that has access to:
-#   /mnt/data/Employee_Profiles.json
-#   /mnt/data/Functions & Skills.xlsx
+# Place this file in the same repository as:
+#   Employee_Profiles.json
+#   Functions & Skills.xlsx
 #
 # Run: streamlit run psa_future_ready_app.py
 
@@ -22,13 +21,14 @@ from typing import Tuple, Dict
 
 st.set_page_config(layout="wide", page_title="PSA Future-Ready Workforce — ML Demo")
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # -------------------------
 # Robust file loaders
 # -------------------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
 @st.cache_data
 def load_employee_json():
+    """Load Employee_Profiles.json from BASE_DIR"""
     p = os.path.join(BASE_DIR, "Employee_Profiles.json")
     if os.path.isfile(p):
         try:
@@ -43,6 +43,7 @@ def load_employee_json():
 
 @st.cache_data
 def load_functions_skills():
+    """Load Functions & Skills.xlsx from BASE_DIR"""
     p = os.path.join(BASE_DIR, "Functions & Skills.xlsx")
     if os.path.isfile(p):
         try:
@@ -63,15 +64,7 @@ def load_functions_skills():
 # Heuristic label creation
 # -------------------------
 def derive_is_leader(profile: dict) -> int:
-    """
-    Heuristic to derive whether the employee is a leader (1) or not (0).
-    Rules (ORed):
-      - Current role_title contains Manager/Lead/Head/Director/Chief
-      - Any past role_title contains Manager/Lead/Head/Director/Chief
-      - Competencies include 'Leadership' or 'Stakeholder & Partnership Management' at Advanced
-      - Projects where role contains 'Lead' or 'Program Lead'
-    This is a heuristic ONLY to enable training when no ground-truth label exists.
-    """
+    """Heuristic to derive whether employee is a leader (1) or not (0)"""
     def contains_lead_word(title):
         if not title:
             return False
@@ -81,54 +74,36 @@ def derive_is_leader(profile: dict) -> int:
                 return True
         return False
 
-    # check current position (positions_history entries with end==None considered current)
     ph = profile.get("positions_history", []) or []
     for pos in ph:
-        end = None
         per = pos.get("period", {}) or {}
         end = per.get("end")
-        # treat None or null-like as current
         if end in (None, "", "null"):
             if contains_lead_word(pos.get("role_title", "")):
                 return 1
 
-    # check any history
     for pos in ph:
         if contains_lead_word(pos.get("role_title", "")):
             return 1
 
-    # competencies: look for leadership
     for comp in profile.get("competencies", []) or []:
         name = (comp.get("name", "") or "").lower()
         level = (comp.get("level", "") or "").lower()
         if "leadership" in name or "stakeholder" in name:
-            # treat advanced stakeholder/leadership as signal
             if level in ("advanced", "expert"):
                 return 1
 
-    # projects role
     for proj in profile.get("projects", []) or []:
         role = proj.get("role", "") or ""
         if contains_lead_word(role):
             return 1
 
-    # otherwise not leader
     return 0
 
 # -------------------------
 # Feature engineering
 # -------------------------
 def profile_to_features(profile: dict) -> Dict:
-    # numeric features we will compute:
-    # - years_total (hire_date to last_updated)
-    # - years_in_role (in_role_since to last_updated)
-    # - num_skills
-    # - num_competencies
-    # - num_projects
-    # - num_positions
-    # - num_languages
-    # - avg_project_duration_months
-    # - has_leadership_competency (binary)
     pi = profile.get("personal_info", {}) or {}
     ei = profile.get("employment_info", {}) or {}
     now_str = ei.get("last_updated") or datetime.now().strftime("%Y-%m-%d")
@@ -168,7 +143,6 @@ def profile_to_features(profile: dict) -> Dict:
     num_positions = len(positions)
     num_languages = len(languages)
 
-    # avg project duration in months
     durations = []
     for p in projects:
         ps = (p.get("period", {}) or {}).get("start")
@@ -181,14 +155,11 @@ def profile_to_features(profile: dict) -> Dict:
 
     has_lead_comp = int(any("lead" in (c.get("name","").lower()) or "leadership" in c.get("name","").lower() for c in competencies))
 
-    # training history length (approx)
     num_trainings = 0
     if "training_history" in profile:
         th = profile.get("training_history") or []
         if isinstance(th, list):
             num_trainings = len(th)
-        else:
-            num_trainings = 0
 
     features = {
         "years_total": float(years_total),
@@ -208,9 +179,8 @@ def profile_to_features(profile: dict) -> Dict:
 # Build dataset and train
 # -------------------------
 @st.cache_resource
-def build_dataset_and_train(emp_json_path="Employee_Profiles.json", retrain=False) -> Tuple[dict, dict]:
-    # returns: model_pack, dataset_info
-    employees = load_employee_json(emp_json_path)
+def build_dataset_and_train():
+    employees = load_employee_json()
     if not employees:
         return None, {}
 
@@ -224,18 +194,14 @@ def build_dataset_and_train(emp_json_path="Employee_Profiles.json", retrain=Fals
         rows.append(row)
     df = pd.DataFrame(rows).set_index("employee_id")
 
-    # Prepare X,y
     feature_cols = [c for c in df.columns if c != "label"]
     X = df[feature_cols].astype(float)
     y = df["label"].astype(int)
 
-    # scaler + trainer
     scaler = StandardScaler()
     Xs = scaler.fit_transform(X)
 
-    # simple logistic regression
     clf = LogisticRegression(max_iter=1000)
-    # If dataset is very small, fit on full data but still compute CV metrics; here we do train/test split if possible
     if len(df) >= 6 and len(y.unique()) > 1:
         try:
             X_train, X_test, y_train, y_test = train_test_split(Xs, y, test_size=0.25, random_state=42, stratify=y)
@@ -249,16 +215,14 @@ def build_dataset_and_train(emp_json_path="Employee_Profiles.json", retrain=Fals
         except Exception:
             auc = None
     else:
-        # fit on full data when too small
         clf.fit(Xs, y)
         acc = None
         auc = None
 
     model_pack = {"model": clf, "scaler": scaler, "feature_cols": feature_cols}
     dataset_info = {"df": df, "accuracy": acc, "auc": auc, "n": len(df)}
-    # persist model to /mnt/data for reuse
     try:
-        joblib.dump(model_pack, "/mnt/data/psa_leadership_model.joblib")
+        joblib.dump(model_pack, os.path.join(BASE_DIR, "psa_leadership_model.joblib"))
     except Exception:
         pass
     return model_pack, dataset_info
@@ -273,28 +237,19 @@ def predict_for_profile(model_pack: dict, profile: dict) -> Dict:
     Xs = model_pack["scaler"].transform(X_row)
     prob = float(model_pack["model"].predict_proba(Xs)[0,1])
     pred = int(model_pack["model"].predict(Xs)[0])
-    # compute per-feature contribution using coef * (x - mean) approximation
     try:
         coefs = model_pack["model"].coef_[0]
-        # standardised feature values:
         std_vals = Xs.flatten()
         contributions = {feature_cols[i]: float(coefs[i] * std_vals[i]) for i in range(len(feature_cols))}
-        # sort top contributors
         contrib_sorted = sorted(contributions.items(), key=lambda x: abs(x[1]), reverse=True)
     except Exception:
         contrib_sorted = []
-    return {
-        "probability": prob,
-        "prediction": pred,
-        "features": feat,
-        "contributions": contrib_sorted
-    }
+    return {"probability": prob, "prediction": pred, "features": feat, "contributions": contrib_sorted}
 
 # -------------------------
-# Simple recommender mapping skills -> trainings
+# Simple recommender
 # -------------------------
 DEFAULT_TRAINING_DB = {
-    # skill lower -> recommended courses
     "cloud architecture": ["Cloud Architecture Masterclass", "Designing Reliable Cloud Systems"],
     "cloud devops & automation": ["Infrastructure as Code (IaC) with Terraform", "CI/CD for Cloud"],
     "securing cloud infrastructure": ["Cloud Security Fundamentals", "Zero Trust Architecture"],
@@ -318,18 +273,16 @@ def recommend_trainings_from_skills(profile: dict, functions_df: pd.DataFrame) -
             trainings += DEFAULT_TRAINING_DB[sk]
             matched_skills.append(sk)
         else:
-            # fuzzy match: check if any key is substring
             for key in DEFAULT_TRAINING_DB:
                 if key in sk or sk in key:
                     trainings += DEFAULT_TRAINING_DB[key]
                     matched_skills.append(sk)
                     break
-    # deduplicate
     trainings = list(dict.fromkeys(trainings))
     return trainings, matched_skills
 
 # -------------------------
-# Conversation handler (rule-based)
+# Conversational assistant
 # -------------------------
 def handle_conversation(profile: dict, message: str) -> Dict:
     m = (message or "").lower()
@@ -358,7 +311,6 @@ with HR-provided outcomes for production.
 """
 )
 
-# left column: data + training controls
 col1, col2 = st.columns([1, 2])
 
 with col1:
@@ -368,10 +320,10 @@ with col1:
     functions_df = load_functions_skills()
     if not functions_df.empty:
         st.write("Functions & Skills taxonomy loaded.")
-    # training / rebuild button
+
     if st.button("Train / Re-train Leadership Model"):
         with st.spinner("Training model..."):
-            model_pack, info = build_dataset_and_train(retrain=True)
+            model_pack, info = build_dataset_and_train()
         st.success("Training finished.")
         if info.get("accuracy") is not None:
             st.write(f"Test accuracy: **{info['accuracy']:.3f}** | AUC: **{info['auc']}**")
@@ -391,13 +343,11 @@ with col1:
 
 with col2:
     st.header("Employee Browser & Prediction")
-    # sidebar-like selection
     emp_map = {e.get("employee_id"): e for e in employees}
     emp_options = list(emp_map.keys())
     selected_emp_id = st.selectbox("Select employee", [""] + emp_options)
     if selected_emp_id:
         profile = emp_map[selected_emp_id]
-        # show profile summary
         st.subheader(f"{profile.get('personal_info',{}).get('name', '')} — {profile.get('employment_info',{}).get('job_title','')}")
         left, right = st.columns(2)
         with left:
@@ -418,8 +368,8 @@ with col2:
             st.write("**Projects**")
             for proj in profile.get("projects", []) or []:
                 st.write(f"- {proj.get('project_name')} — {proj.get('role')}")
+
         st.markdown("---")
-        # Predict leadership
         if model_pack:
             res = predict_for_profile(model_pack, profile)
             prob = res["probability"]
@@ -430,7 +380,6 @@ with col2:
             for feat, val in res["contributions"][:6]:
                 st.write(f"- {feat}: {val:.3f}")
 
-        # Recommender
         st.markdown("---")
         st.subheader("Recommended Trainings & Pathways")
         trainings, matched = recommend_trainings_from_skills(profile, functions_df)
@@ -440,7 +389,7 @@ with col2:
                 st.write(f"- {t}")
         else:
             st.write("No direct mapping found in the small internal database. Consider cross-functional learning or leadership courses.")
-        # Internal mobility hint (very simple)
+
         job_title = (profile.get("employment_info", {}).get("job_title", "") or "").lower()
         if "analyst" in job_title:
             st.info("Suggested career ladder: Senior Analyst → Principal Analyst → Team Lead / Manager (consider leadership tracks).")
@@ -451,7 +400,6 @@ with col2:
         else:
             st.info("Consider cross-training and stretch assignments to broaden exposure.")
 
-        # conversational panel
         st.markdown("---")
         st.subheader("Assistant (conversational)")
         question = st.text_input("Ask the assistant about career, training, or wellbeing")
@@ -462,7 +410,6 @@ with col2:
                 reply = handle_conversation(profile, question)
                 st.write(reply.get("reply"))
 
-# bottom: dataset view & export
 st.markdown("---")
 st.header("Dataset (derived features & labels)")
 if info.get("n", 0) > 0:
