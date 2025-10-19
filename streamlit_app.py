@@ -23,12 +23,6 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, roc_auc_score
 import joblib
 
-# Optional OpenAI (only used if a key is provided)
-try:
-    from openai import OpenAI
-except Exception:
-    OpenAI = None
-
 # ===============================
 # APP CONFIG
 # ===============================
@@ -107,7 +101,11 @@ def parse_date(s):
         except Exception:
             continue
     return None
-
+# Optional OpenAI (only used if a key is provided)
+try:
+    from openai import OpenAI
+except Exception:
+    OpenAI = None
 def profile_to_features(profile: Dict) -> Dict:
     ei = profile.get("employment_info", {}) or {}
     now = datetime.utcnow()
