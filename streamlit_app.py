@@ -30,6 +30,9 @@ EMP_PATH = BASE_DIR / "Employee_Profiles.json"
 FUNC_PATH = BASE_DIR / "Functions & Skills.xlsx"
 MODEL_PATH = BASE_DIR / "psa_leadership_model.joblib"
 
+# NEW: PSA Values for recognition system
+PSA_VALUES = ["Collaboration", "Innovation", "Customer Focus", "Integrity", "Accountability", "Sustainability"]
+
 # ===============================
 # SIDEBAR CONFIG
 # ===============================
@@ -39,6 +42,7 @@ if api_key_input:
     os.environ["OPENAI_API_KEY"] = api_key_input
 
 st.sidebar.markdown("### 🧭 Accessibility")
+# This section already helps meet the "digital accessibility" requirement
 if st.sidebar.checkbox("High contrast mode"):
     st.markdown("<style>.stApp{background-color:black;color:white;}</style>", unsafe_allow_html=True)
 if st.sidebar.checkbox("Large font size"):
@@ -75,7 +79,7 @@ def load_functions_skills():
             xl = pd.read_excel(FUNC_PATH, sheet_name=None, engine="openpyxl")
             frames = []
             for name, df in xl.items():
-                df["__sheet__"] = name
+                df["__sheet__"] = name # Use sheet name as 'Function' or 'Department'
                 frames.append(df)
             return pd.concat(frames, ignore_index=True)
         except Exception as e:
@@ -87,24 +91,30 @@ def contains_lead_word(title):
     if not title:
         return False
     t = title.lower()
-    for kw in ["manager", "lead", "head", "director", "chief"]:
+    for kw in ["manager", "lead", "head", "director", "chief", "vp", "principal"]:
         if kw in t:
             return True
     return False
 
 def derive_is_leader(profile):
+    # Check current role
+    if contains_lead_word(profile.get("employment_info", {}).get("job_title", "")):
+        return 1
+    # Check past roles
     for pos in profile.get("positions_history", []) or []:
         if contains_lead_word(pos.get("role_title", "")):
             return 1
+    # Check competencies
     for c in profile.get("competencies", []) or []:
         if "leadership" in (c.get("name") or "").lower():
-            return 1
+            if (c.get("level") or 0) > 3: # Assume 1-5 scale
+                return 1
     return 0
 
 def parse_date(s):
     if not s:
         return None
-    for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"): # Added more formats
         try:
             return datetime.strptime(s, fmt)
         except Exception:
@@ -112,21 +122,43 @@ def parse_date(s):
     return None
 
 def profile_to_features(profile):
+    """
+    IMPROVED: This function now extracts performance, engagement, and
+    behavioral (training, project scope) data as requested.
+    """
     ei = profile.get("employment_info", {}) or {}
     now = datetime.utcnow()
     hire = parse_date(ei.get("hire_date"))
     in_role = parse_date(ei.get("in_role_since"))
     years_total = (now - hire).days / 365.25 if hire else 0
     years_in_role = (now - in_role).days / 365.25 if in_role else 0
+
     skills = profile.get("skills", []) or []
     comps = profile.get("competencies", []) or []
     projs = profile.get("projects", []) or []
+    
+    # NEW: Performance data
+    perf_reviews = profile.get("performance_reviews", []) or []
+    avg_performance_rating = np.mean([r.get('rating', 3) for r in perf_reviews]) if perf_reviews else 3.0 # Default to 3/5
+    
+    # NEW: Engagement data
+    eng_scores = profile.get("engagement_scores", []) or []
+    latest_engagement_score = (eng_scores[-1].get('score', 70)) if eng_scores else 70 # Default to 70/100
+    
+    # NEW: Behavioral / Development data
+    num_trainings = len(profile.get("training_history", []) or [])
+    num_cross_functional_projects = len([p for p in projs if p.get('scope') == 'cross-functional'])
+    
     return {
         "years_total": years_total,
         "years_in_role": years_in_role,
         "num_skills": len(skills),
         "num_competencies": len(comps),
         "num_projects": len(projs),
+        "avg_performance_rating": avg_performance_rating,
+        "latest_engagement_score": latest_engagement_score,
+        "num_trainings": num_trainings,
+        "num_cross_functional_projects": num_cross_functional_projects,
     }
 
 @st.cache_resource
@@ -140,152 +172,191 @@ def build_dataset_and_train():
         feat["label"] = derive_is_leader(p)
         feat["employee_id"] = p.get("employee_id")
         rows.append(feat)
+    
     df = pd.DataFrame(rows).set_index("employee_id")
+    df = df.dropna(subset=["label"]) # Ensure no missing labels
+    
     X = df[[c for c in df.columns if c != "label"]].fillna(0).astype(float)
     y = df["label"].astype(int)
+    
+    # Handle class imbalance for leadership (likely few leaders)
+    class_weight = 'balanced' if len(y) > 0 and y.mean() < 0.4 else None
+    
     scaler = StandardScaler()
     Xs = scaler.fit_transform(X)
-    clf = LogisticRegression(max_iter=1000)
-    if len(df) > 5 and len(y.unique()) > 1:
-        X_train, X_test, y_train, y_test = train_test_split(Xs, y, test_size=0.25, random_state=42, stratify=y)
-        clf.fit(X_train, y_train)
-        acc = float(accuracy_score(y_test, clf.predict(X_test)))
-        auc = float(roc_auc_score(y_test, clf.predict_proba(X_test)[:, 1]))
+    
+    clf = LogisticRegression(max_iter=1000, class_weight=class_weight, random_state=42)
+    
+    if len(df) > 10 and len(y.unique()) > 1: # Need at least 2 classes
+        try:
+            X_train, X_test, y_train, y_test = train_test_split(Xs, y, test_size=0.25, random_state=42, stratify=y)
+            clf.fit(X_train, y_train)
+            acc = float(accuracy_score(y_test, clf.predict(X_test)))
+            auc = float(roc_auc_score(y_test, clf.predict_proba(X_test)[:, 1]))
+        except ValueError: # Happens if one class has too few samples
+            clf.fit(Xs, y)
+            acc, auc = None, None
     else:
         clf.fit(Xs, y)
         acc, auc = None, None
+        
     joblib.dump({"model": clf, "scaler": scaler, "feature_cols": list(X.columns)}, MODEL_PATH)
     return {"model": clf, "scaler": scaler, "feature_cols": list(X.columns)}, {"df": df, "accuracy": acc, "auc": auc}
 
 def predict_for_profile(model_pack, profile):
     feat = profile_to_features(profile)
-    X_row = np.array([[feat[c] for c in model_pack["feature_cols"]]], dtype=float)
+    X_row = np.array([[feat.get(c, 0) for c in model_pack["feature_cols"]]], dtype=float) # Use .get(c, 0) for safety
     Xs = model_pack["scaler"].transform(X_row)
     prob = float(model_pack["model"].predict_proba(Xs)[0, 1])
     return prob
+
+@st.cache_data
+def get_all_predictions(_model_pack, employees):
+    """NEW: Pre-calculates all leadership predictions for efficient mentorship matching."""
+    if not _model_pack:
+        return {}
+    return {e['employee_id']: predict_for_profile(_model_pack, e) for e in employees}
+
+@st.cache_data
+def find_mentors(current_profile, all_employees, all_predictions, min_prob=0.6):
+    """NEW: Finds potential mentors based on leadership score and skill/department overlap."""
+    mentors = []
+    current_id = current_profile.get("employee_id")
+    current_skills = set([s.get("skill_name") for s in current_profile.get("skills", [])])
+    current_dept = current_profile.get("employment_info", {}).get("department")
+
+    for emp in all_employees:
+        emp_id = emp.get("employee_id")
+        if emp_id == current_id:
+            continue
+        
+        prob = all_predictions.get(emp_id, 0)
+        
+        if prob >= min_prob:
+            emp_skills = set([s.get("skill_name") for s in emp.get("skills", [])])
+            emp_dept = emp.get("employment_info", {}).get("department")
+            
+            skill_overlap = len(current_skills.intersection(emp_skills))
+            dept_match = (emp_dept == current_dept)
+            
+            # Add if they are a leader AND (in the same dept OR have skill overlap)
+            if dept_match or skill_overlap > 1:
+                mentors.append({
+                    "name": emp.get("personal_info", {}).get("name"),
+                    "role": emp.get("employment_info", {}).get("job_title"),
+                    "department": emp_dept,
+                    "prob": prob,
+                    "skill_overlap": skill_overlap,
+                    "id": emp_id
+                })
+    
+    # Sort by probability and skill overlap
+    return sorted(mentors, key=lambda x: (x['prob'], x['skill_overlap']), reverse=True)
+
 
 # ===============================
 # AI FUNCTIONS
 # ===============================
 def handle_conversation(profile, message):
+    """IMPROVED: Prompt is more aligned with mental well-being and engagement."""
     client = get_openai_client()
     name = profile.get("personal_info", {}).get("name", "the employee")
     role = profile.get("employment_info", {}).get("job_title", "employee")
+    
     if not client:
-        return {"reply": f"Hi {name}, I'm your career assistant. I can help with career growth, stress management, or upskilling."}
-    prompt = f"""
-    You are PSA's Career & Wellbeing Assistant.
-    Employee name: {name}
-    Current role: {role}.
-    Task: Respond concisely and empathetically to the employee's message below.
-    Message: {message}
-    Provide advice related to career growth, wellbeing, or skill development.
+        # Provide a helpful default response if AI is not configured
+        return {"reply": f"Hi {name}, I'm your career assistant. I'm here to help with career growth, continuous development, or discussing engagement and well-being. How can I support you today?"}
+
+    sys_prompt = f"""
+    You are PSA's Career & Wellbeing Assistant. You are empathetic, supportive, and action-oriented.
+    You are speaking to: {name}, who is a {role} at PSA.
+    Your primary goal is to support them in three key areas:
+    1.  **Continuous Development:** Suggesting skills, courses, or internal projects.
+    2.  **Mental Well-being:** Providing resources, listening empathetically, and suggesting strategies for stress management.
+    3.  **Engagement:** Helping them connect with company values and find purpose in their work.
+    
+    Respond concisely (2-3 sentences) and always end with a supportive tone or an open question.
     """
+    
     try:
         r = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a supportive HR wellbeing assistant."},
-                {"role": "user", "content": prompt},
+                {"role": "system", "content": sys_prompt},
+                {"role": "user", "content": message},
             ],
             temperature=0.7,
             max_tokens=250
         )
         return {"reply": r.choices[0].message.content.strip()}
     except Exception as e:
-        return {"reply": f"(AI error: {e})"}
+        st.error(f"AI error: {e}")
+        return {"reply": f"I seem tobe having trouble connecting. Please check the API key."}
 
-def generate_career_pathway(profile, leadership_prob):
+def generate_career_pathway(profile, leadership_prob, all_functions_df):
+    """IMPROVED: Prompt now explicitly asks for skill gaps and internal mobility options."""
     client = get_openai_client()
     name = profile.get("personal_info", {}).get("name", "the employee")
     role = profile.get("employment_info", {}).get("job_title", "employee")
     skills = [s.get("skill_name") for s in profile.get("skills", []) if s.get("skill_name")]
+    
+    # Give the AI context on available functions/skills
+    function_list = "Not available."
+    if not all_functions_df.empty:
+        # Summarize the functions data for the prompt
+        func_skills = all_functions_df.groupby('__sheet__')['Skill'].apply(lambda x: ', '.join(x.dropna().unique()[:5])).reset_index()
+        function_list = "\n".join([f"- Function: {row['__sheet__']}, Key Skills: {row['Skill']}" for i, row in func_skills.iterrows()])
+
     if not client:
-        return {"ai_reply": f"As {role}, consider next steps like Senior {role}, Team Lead, or Manager roles. Strengthen skills: leadership, stakeholder management, and innovation."}
+        return {"ai_reply": f"As {role}, consider next steps like Senior {role}, Team Lead, or Manager roles. Strengthen skills: leadership, stakeholder management, and innovation. Explore roles in other departments by checking the internal job portal."}
+
     sys_prompt = f"""
     You are PSA's AI Career Advisor.
-    Employee: {name}, current role: {role}.
-    Leadership potential: {leadership_prob:.2%}.
-    Skills: {', '.join(skills[:10])}.
-    Suggest 2–3 future roles, each with 2–3 upskilling areas and internal mobility options.
-    Keep concise, actionable, and aligned with PSA's values.
+    You are generating a personalized career pathway for:
+    - Employee: {name}
+    - Current Role: {role}
+    - Current Skills: {', '.join(skills[:15])}
+    - Predicted Leadership Potential: {leadership_prob:.0%}
+
+    Available PSA Functions & Key Skills:
+    {function_list}
+    
+    Your Task:
+    Generate a concise, actionable 3-step career plan. For each step (e.g., Future Role 1, 2, 3):
+    1.  **Future Role:** Suggest a realistic next role (e.g., "Senior {role}", "Project Manager", "Data Scientist").
+    2.  **Skill Gap & Upskilling:** Identify 2-3 key skill gaps and suggest specific upskilling actions (e.g., "Gap: 'Data Visualization'. Action: Take 'Tableau Fundamentals' on PSA's learning platform.").
+    3.  **Internal Mobility:** Suggest how to get there (e.g., "Action: Seek a cross-functional project with the 'Data Analytics' team.").
+    
+    Be optimistic, encouraging, and align with PSA's values of innovation and growth.
     """
     try:
         r = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": sys_prompt},
-                {"role": "user", "content": "Generate a personalised PSA career pathway."},
+                {"role": "user", "content": f"Generate a personalized career pathway for me, {name}."}
             ],
             temperature=0.8,
-            max_tokens=400
+            max_tokens=500
         )
         return {"ai_reply": r.choices[0].message.content.strip()}
     except Exception as e:
+        st.error(f"AI error: {e}")
         return {"ai_reply": f"(Error generating pathway: {e})"}
 
 # ===============================
 # UI
 # ===============================
-st.title("🚀 PSA Future-Ready Workforce — Complete AI Platform")
+st.title("🚀 PSA Future-Ready Workforce — AI Platform")
 st.write("AI-driven leadership prediction, personalised career pathways, conversational assistant, mentorship, and recognition system.")
 
 employees = load_employee_json()
 functions_df = load_functions_skills()
 model_pack, info = build_dataset_and_train()
+all_predictions = get_all_predictions(model_pack, employees) # Pre-calculate all predictions
 
-if not employees:
+if not employees or not model_pack:
+    st.error("Failed to load employee data or train model. Please check file paths and data.")
     st.stop()
 
-left, right = st.columns([1, 2])
-
-with left:
-    st.header("📊 Model Overview")
-    if info.get("accuracy"):
-        st.metric("Model Accuracy", f"{info['accuracy']:.3f}")
-    if info.get("auc"):
-        st.metric("ROC AUC", f"{info['auc']:.3f}")
-    st.caption("Model trained using heuristic leadership labels and feature engineering.")
-
-with right:
-    st.header("👥 Employee Explorer")
-    emp_map = {e.get("employee_id"): e for e in employees}
-    selected_id = st.selectbox("Select Employee", [""] + list(emp_map.keys()))
-    if selected_id:
-        profile = emp_map[selected_id]
-        name = profile.get("personal_info", {}).get("name", "")
-        role = profile.get("employment_info", {}).get("job_title", "")
-        dept = profile.get("employment_info", {}).get("department", "")
-        hire = profile.get("employment_info", {}).get("hire_date", "")
-        st.subheader(f"{name} — {role}")
-        st.markdown(f"**Department:** {dept} | **Hire Date:** {hire}")
-
-        st.markdown("### 🧩 Background & Skills")
-        st.write("**Skills:**", ", ".join([s.get("skill_name") for s in profile.get("skills", []) if s.get("skill_name")]))
-        st.write("**Competencies:**", ", ".join([c.get("name") for c in profile.get("competencies", []) if c.get("name")]))
-
-        st.markdown("### 🎯 Leadership Prediction")
-        prob = predict_for_profile(model_pack, profile)
-        st.metric("Predicted Leadership Potential", f"{prob:.2%}")
-        if prob > 0.6:
-            st.success("High leadership potential — consider mentorship or strategic leadership training.")
-        elif prob > 0.3:
-            st.info("Emerging leader — develop leadership through projects or coaching.")
-        else:
-            st.warning("Focus on technical upskilling and cross-functional exposure.")
-
-        st.markdown("### 🚀 Personalised Career Pathway")
-        if st.button("Generate Career Pathway"):
-            with st.spinner("Generating AI pathway..."):
-                plan = generate_career_pathway(profile, prob)
-            st.write(plan["ai_reply"])
-
-        st.markdown("### 💬 Conversational Career Assistant")
-        user_msg = st.text_input("Ask about your career, wellbeing, or growth:")
-        if st.button("Ask Assistant"):
-            with st.spinner("Thinking..."):
-                res = handle_conversation(profile, user_msg)
-            st.write(res["reply"])
-
-st.markdown("---")
-st.caption("Built with ❤️ for PSA — empowering a future-ready workforce through AI and inclusivity.")
+left, right
