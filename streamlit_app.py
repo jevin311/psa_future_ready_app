@@ -359,4 +359,158 @@ if not employees or not model_pack:
     st.error("Failed to load employee data or train model. Please check file paths and data.")
     st.stop()
 
-left, right
+# --- THIS IS THE CORRECTED LINE 362 ---
+left, right = st.columns([1, 2])
+
+with left:
+    st.header("📊 Model Overview")
+    if info.get("accuracy"):
+        st.metric("Model Accuracy", f"{info['accuracy']:.3f}")
+    if info.get("auc"):
+        st.metric("ROC AUC", f"{info['auc']:.3f}")
+    
+    if info.get('df') is not None:
+        st.write("Features used in model:")
+        st.dataframe(info['df'].columns.drop('label'), height=200)
+    st.caption("Model trained on employee profile data, including performance, engagement, and tenure, to predict future leadership roles.")
+
+with right:
+    st.header("👥 Employee Explorer")
+    emp_map = {e.get("employee_id"): e for e in employees}
+    emp_name_map = {f"{e.get('personal_info', {}).get('name')} ({e.get('employee_id')})": e.get('employee_id') for e in employees}
+    
+    # Sort names for easier selection
+    sorted_names = sorted(emp_name_map.keys())
+    
+    selected_name = st.selectbox("Select Employee", [""] + sorted_names)
+    
+    if selected_name:
+        selected_id = emp_name_map[selected_name]
+        profile = emp_map[selected_id]
+        
+        # Profile Header
+        name = profile.get("personal_info", {}).get("name", "")
+        role = profile.get("employment_info", {}).get("job_title", "")
+        dept = profile.get("employment_info", {}).get("department", "")
+        hire = profile.get("employment_info", {}).get("hire_date", "")
+        st.subheader(f"{name} — {role}")
+        st.markdown(f"**Department:** {dept} | **Hire Date:** {hire} | **ID:** {selected_id}")
+
+        # --- NEW: UI with Tabs ---
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "🎯 Overview & Leadership", 
+            "🚀 Career Pathway", 
+            "💬 Wellbeing Assistant", 
+            "🤝 Mentorship Hub", 
+            "🌟 Recognition"
+        ])
+
+        with tab1:
+            st.markdown("### 🎯 Leadership Prediction")
+            prob = all_predictions.get(selected_id, 0)
+            
+            # Display as a percentage
+            st.metric("Predicted Leadership Potential", f"{prob:.1%}")
+            # Use progress bar as a visual gauge
+            st.progress(prob)
+
+            if prob > 0.6:
+                st.success("High leadership potential — recommend for strategic leadership training and mentorship.")
+            elif prob > 0.3:
+                st.info("Emerging leader — develop through cross-functional projects and coaching.")
+            else:
+                st.warning("Focus on deepening technical expertise and cross-functional exposure.")
+
+            st.markdown("### 🧩 Background & Skills")
+            skills_list = [s.get("skill_name") for s in profile.get("skills", []) if s.get("skill_name")]
+            st.write(f"**Skills ({len(skills_list)}):**", ", ".join(skills_list) if skills_list else "No skills listed.")
+            
+            comps_list = [c.get("name") for c in profile.get("competencies", []) if c.get("name")]
+            st.write(f"**Competencies ({len(comps_list)}):**", ", ".join(comps_list) if comps_list else "No competencies listed.")
+            
+            with st.expander("View Raw Profile Data"):
+                st.json(profile, expanded=False)
+
+        with tab2:
+            st.markdown("### 🚀 Personalised Career Pathway")
+            st.write("Click the button to generate an AI-powered career plan, including next roles, skill gaps, and internal mobility options.")
+            if st.button("Generate Career Pathway", key="pathway_btn"):
+                with st.spinner("Generating AI pathway... This may take a moment."):
+                    plan = generate_career_pathway(profile, prob, functions_df)
+                st.markdown(plan["ai_reply"])
+
+        with tab3:
+            st.markdown("### 💬 Conversational Career Assistant")
+            st.write("Ask about your career, skill development, or mental well-being.")
+            
+            if "messages" not in st.session_state:
+                st.session_state.messages = {}
+            
+            if selected_id not in st.session_state.messages:
+                 st.session_state.messages[selected_id] = []
+            
+            # Display past messages
+            for msg in st.session_state.messages[selected_id]:
+                with st.chat_message(msg["role"]):
+                    st.write(msg["content"])
+
+            user_msg = st.chat_input("Ask about your career, wellbeing, or growth:")
+            
+            if user_msg:
+                # Add user message to state
+                st.session_state.messages[selected_id].append({"role": "user", "content": user_msg})
+                with st.chat_message("user"):
+                    st.write(user_msg)
+                
+                # Get AI response
+                with st.chat_message("assistant"):
+                    with st.spinner("Thinking..."):
+                        res = handle_conversation(profile, user_msg)
+                        response_text = res["reply"]
+                        st.write(response_text)
+                
+                # Add AI response to state
+                st.session_state.messages[selected_id].append({"role": "assistant", "content": response_text})
+
+        with tab4:
+            st.markdown("### 🤝 Mentorship Hub")
+            st.write("Find colleagues with high leadership potential who can help you grow.")
+            if st.button("Find Potential Mentors", key="mentor_btn"):
+                with st.spinner("Finding potential mentors..."):
+                    mentors = find_mentors(profile, employees, all_predictions)
+                
+                if not mentors:
+                    st.info("No immediate mentors found. Broaden your search or check back later!")
+                else:
+                    st.success(f"Found {len(mentors)} potential mentors!")
+                    cols = st.columns(3)
+                    for i, mentor in enumerate(mentors[:6]): # Show top 6
+                        with cols[i % 3]:
+                            with st.container(border=True):
+                                st.subheader(mentor['name'])
+                                st.write(f"**Role:** {mentor['role']}")
+                                st.write(f"**Dept:** {mentor['department']}")
+                                st.write(f"**Skill Overlap:** {mentor['skill_overlap']}")
+                                st.button("Request Mentorship", key=f"req_{mentor['id']}")
+
+        with tab5:
+            st.markdown("### 🌟 Recognition & Feedback")
+            st.write("Recognize a colleague for demonstrating PSA's values and contributing to our culture.")
+            
+            other_employees = [name for name in sorted_names if name != selected_name]
+            recipient_name = st.selectbox("Who do you want to recognize?", other_employees)
+            
+            values_selected = st.multiselect("Which PSA values did they demonstrate?", PSA_VALUES)
+            
+            feedback_msg = st.text_area("Your recognition message:", height=100)
+            
+            if st.button("Submit Recognition", key="recog_btn"):
+                if recipient_name and values_selected and feedback_msg:
+                    # In a real app, this would write to a database
+                    st.success(f"Thank you for recognizing {recipient_name}! Your feedback has been shared.")
+                else:
+                    st.warning("Please select a recipient, at least one value, and write a message.")
+
+
+st.markdown("---")
+st.caption("Built with ❤️ for PSA — empowering a future-ready workforce through AI and inclusivity.")
